@@ -12,10 +12,12 @@ computer program. It is used for creating and evolving programs used in the
 from copy import copy
 
 import numpy as np
+import pandas as pd
 from sklearn.utils.random import sample_without_replacement
 
 from .functions import _Function
 from .utils import check_random_state
+
 
 
 class _Program(object):
@@ -378,6 +380,7 @@ class _Program(object):
                              else X[:, t] if isinstance(t, int)
                              else t for t in apply_stack[-1][1:]]
                 intermediate_result = function(*terminals)
+#                 print(np.array(apply_stack).shape)
                 if len(apply_stack) != 1:
                     apply_stack.pop()
                     apply_stack[-1].append(intermediate_result)
@@ -459,12 +462,25 @@ class _Program(object):
             The raw fitness of the program.
 
         """
-        y_pred = self.execute(X)
-        if self.transformer:
-            y_pred = self.transformer(y_pred)
-        raw_fitness = self.metric(y, y_pred, sample_weight)
+        list_fitness = []
+        df = pd.concat([X, y.drop('date', axis = 1)], axis = 1)
+        for _, group in df.groupby('date'):
+            y_pred = self.execute(group.iloc[:, 1:-1].values)
+#             print(group.iloc[:, 1:-1].values.shape)
+#             print(np.array(y_pred).shape)
+            if self.transformer:
+                y_pred = self.transformer(y_pred)
+            raw_fitness = self.metric(group.iloc[:, -1].values, y_pred, sample_weight)
+            list_fitness.append(raw_fitness)
+        return np.mean(list_fitness)
 
-        return raw_fitness
+
+        # y_pred = self.execute(X)
+        # if self.transformer:
+        #     y_pred = self.transformer(y_pred)
+        # raw_fitness = self.metric(y, y_pred, sample_weight)
+
+        # return raw_fitness
 
     def fitness(self, parsimony_coefficient=None):
         """Evaluate the penalized fitness of the program according to X, y.

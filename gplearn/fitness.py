@@ -104,6 +104,7 @@ def make_fitness(*, function, greater_is_better, wrap=True):
 def _weighted_pearson(y, y_pred, w):
     """Calculate the weighted Pearson correlation coefficient."""
     with np.errstate(divide='ignore', invalid='ignore'):
+        w = np.ones(len(y_pred))
         y_pred_demean = y_pred - np.average(y_pred, weights=w)
         y_demean = y - np.average(y, weights=w)
         corr = ((np.sum(w * y_pred_demean * y_demean) / np.sum(w)) /

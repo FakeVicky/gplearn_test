@@ -37,7 +37,7 @@ MAX_INT = np.iinfo(np.int32).max
 
 def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
     """Private function used to build a batch of programs within a job."""
-    n_samples, n_features = X.shape
+    n_samples, n_features = X.drop('date', axis = 1).shape
     # Unpack parameters
     tournament_size = params['tournament_size']
     function_set = params['function_set']
@@ -131,23 +131,23 @@ def _parallel_evolve(n_programs, parents, X, y, sample_weight, seeds, params):
         program.parents = genome
 
         # Draw samples, using sample weights, and then fit
-        if sample_weight is None:
-            curr_sample_weight = np.ones((n_samples,))
-        else:
-            curr_sample_weight = sample_weight.copy()
-        oob_sample_weight = curr_sample_weight.copy()
+#         if sample_weight is None:
+#             curr_sample_weight = np.ones((n_samples,))
 
-        indices, not_indices = program.get_all_indices(n_samples,
-                                                       max_samples,
-                                                       random_state)
+#         else:
+#             curr_sample_weight = sample_weight
+#         oob_sample_weight = curr_sample_weight
 
-        curr_sample_weight[not_indices] = 0
-        oob_sample_weight[indices] = 0
+#         indices, not_indices = program.get_all_indices(n_samples,
+#                                                        max_samples,
+#                                                        random_state)
 
-        program.raw_fitness_ = program.raw_fitness(X, y, curr_sample_weight)
+#         curr_sample_weight[not_indices] = 0
+#         oob_sample_weight[indices] = 0
+        program.raw_fitness_ = program.raw_fitness(X, y, None) #curr_sample_weight
         if max_samples < n_samples:
             # Calculate OOB fitness
-            program.oob_fitness_ = program.raw_fitness(X, y, oob_sample_weight)
+            program.oob_fitness_ = program.raw_fitness(X, y, None) #oob_sample_weight
 
         programs.append(program)
 
@@ -285,31 +285,31 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         random_state = check_random_state(self.random_state)
 
         # Check arrays
-        if sample_weight is not None:
-            sample_weight = _check_sample_weight(sample_weight, X)
+        # if sample_weight is not None:
+        #     sample_weight = _check_sample_weight(sample_weight, X)
 
-        if isinstance(self, ClassifierMixin):
-            X, y = self._validate_data(X, y, y_numeric=False)
-            check_classification_targets(y)
+        # if isinstance(self, ClassifierMixin):
+        #     X, y = self._validate_data(X, y, y_numeric=False)
+        #     check_classification_targets(y)
 
-            if self.class_weight:
-                if sample_weight is None:
-                    sample_weight = 1.
-                # modify the sample weights with the corresponding class weight
-                sample_weight = (sample_weight *
-                                 compute_sample_weight(self.class_weight, y))
+        #     if self.class_weight:
+#                     if sample_weight is None:
+#                         sample_weight = 1.
+        #         # modify the sample weights with the corresponding class weight
+        #         sample_weight = (sample_weight *
+        #                          compute_sample_weight(self.class_weight, y))
 
-            self.classes_, y = np.unique(y, return_inverse=True)
-            n_trim_classes = np.count_nonzero(np.bincount(y, sample_weight))
-            if n_trim_classes != 2:
-                raise ValueError("y contains %d class after sample_weight "
-                                 "trimmed classes with zero weights, while 2 "
-                                 "classes are required."
-                                 % n_trim_classes)
-            self.n_classes_ = len(self.classes_)
+        #     self.classes_, y = np.unique(y, return_inverse=True)
+        #     n_trim_classes = np.count_nonzero(np.bincount(y, sample_weight))
+        #     if n_trim_classes != 2:
+        #         raise ValueError("y contains %d class after sample_weight "
+        #                          "trimmed classes with zero weights, while 2 "
+        #                          "classes are required."
+        #                          % n_trim_classes)
+        #     self.n_classes_ = len(self.classes_)
 
-        else:
-            X, y = self._validate_data(X, y, y_numeric=True)
+        # else:
+        #     X, y = self._validate_data(X, y, y_numeric=True)
 
         hall_of_fame = self.hall_of_fame
         if hall_of_fame is None:
@@ -554,9 +554,25 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 hall_of_fame = fitness.argsort()[::-1][:self.hall_of_fame]
             else:
                 hall_of_fame = fitness.argsort()[:self.hall_of_fame]
-            evaluation = np.array([gp.execute(X) for gp in
-                                   [self._programs[-1][i] for
-                                    i in hall_of_fame]])
+            
+            list_gp = []
+            for gp in [self._programs[-1][i] for i in hall_of_fame]:
+                list_eval = []
+                for _, group in X.groupby('date'):
+                    tmp = gp.execute(group.iloc[:, 1:].values)
+                    list_eval.append(tmp)
+                tmp_y = np.concatenate(tuple(list_eval))
+                list_gp.append(tmp_y)
+            
+
+            evaluation = np.array(list_gp)
+            
+#             evaluation = np.array([gp.execute(X.drop('date', axis = 1).values) for gp in
+#             [self._programs[-1][i] for
+#             i in hall_of_fame]])
+        
+#             print(evaluation)
+            
             if self.metric == 'spearman':
                 evaluation = np.apply_along_axis(rankdata, 1, evaluation)
 
@@ -580,7 +596,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                                    hall_of_fame[components]]
 
         else:
-            # Find the best individual in the final generation
+#             Find the best individual in the final generation
             if self._metric.greater_is_better:
                 self._program = self._programs[-1][np.argmax(fitness)]
             else:
@@ -1386,6 +1402,10 @@ class SymbolicTransformer(BaseSymbolic, TransformerMixin):
 
     """
 
+    """
+    为了满足对面板数据的需求，现按照华泰研报进行截面循环分析
+    """
+
     def __init__(self,
                  *,
                  population_size=1000,
@@ -1484,13 +1504,13 @@ class SymbolicTransformer(BaseSymbolic, TransformerMixin):
         if not hasattr(self, '_best_programs'):
             raise NotFittedError('SymbolicTransformer not fitted.')
 
-        X = check_array(X)
-        _, n_features = X.shape
-        if self.n_features_in_ != n_features:
-            raise ValueError('Number of features of the model must match the '
-                             'input. Model n_features is %s and input '
-                             'n_features is %s.'
-                             % (self.n_features_in_, n_features))
+#         X = check_array(X)
+#         _, n_features = X.shape
+#         if self.n_features_in_ != n_features:
+#             raise ValueError('Number of features of the model must match the '
+#                              'input. Model n_features is %s and input '
+#                              'n_features is %s.'
+#                              % (self.n_features_in_, n_features))
 
         X_new = np.array([gp.execute(X) for gp in self._best_programs]).T
 
@@ -1504,6 +1524,7 @@ class SymbolicTransformer(BaseSymbolic, TransformerMixin):
         X : array-like, shape = [n_samples, n_features]
             Training vectors, where n_samples is the number of samples and
             n_features is the number of features.
+            因为作用对象为截面数据，所以要加入date这一列
 
         y : array-like, shape = [n_samples]
             Target values.
@@ -1516,5 +1537,9 @@ class SymbolicTransformer(BaseSymbolic, TransformerMixin):
         X_new : array-like, shape = [n_samples, n_components]
             Transformed array.
 
+        """
+
+        """
+        首先随机生成算子组合，然后for循环对每个截面单独计算适应度fitness，最后求平均
         """
         return self.fit(X, y, sample_weight).transform(X)
